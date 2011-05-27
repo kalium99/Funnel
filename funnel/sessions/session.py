@@ -12,7 +12,7 @@ class Session(object):
             
     @property
     def previous_interval(self):
-        return self._previous_user.get(self.id)
+        return self._previous_user.get(self.id, 0)
 
     def set_previous_interval(self,val):
         self._previous_user[self.id] = val
