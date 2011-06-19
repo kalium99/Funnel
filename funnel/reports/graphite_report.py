@@ -4,11 +4,23 @@ import logging
 import time
 
 now = datetime.now
-server = None # This should be set from loader.py
+
+class GraphiteReport:
+
+    server = None # This should be set from loader.py
+
+    @classmethod
+    def result_server(cls):
+        return GraphiteConnection(cls.server, port=2023) #This is the aggregator port
+
+def report_event(target, val=1):
+    if not target:
+        raise ValueError('Must specify a proper target namespace')
+	
+    GraphiteReport.result_server().send('%s %d %s\n' % (target, val, int(time.time())))
 
 def report(f):
-
-    result_server = GraphiteConnection(server, port=2023) #This is the aggregator port
+    result_server = GraphiteReport.result_server()
  
     def the_run(instance, *args):
         """Sends data to graphite server

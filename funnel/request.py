@@ -2,6 +2,7 @@ import subprocess
 import random
 import re
 import xmlrpclib
+import jsonrpclib
 import logging
 import time
 from multiprocessing import Manager
@@ -49,6 +50,8 @@ class RequestFactory(object):
         # XXX move this out to a request dir where each class is a module
         if type == 'xmlrpc':
             req = XMLRPCRequest(*args, **kw)
+        if type == 'jsonrpc':
+            req = JSONRPCRequest(*args, **kw)
         if type == 'http':
             req = HTTPRequest(*args, **kw)
         if type == 'qpid':
@@ -79,7 +82,7 @@ class Request(object):
         
 class ClientRequest(Request):
      
-    result_queue = Manager().list()
+    result_queue = Manager().dict()
   
     def __init__(self, cmd, args=None,  keep_return=False, *a, **kw):
         super(ClientRequest, self).__init__(*a, **kw)
@@ -99,7 +102,11 @@ class ClientRequest(Request):
         stdout, stderr = p.communicate() 
         log.debug('Stdout: %s, Stderr: %s' % (stdout, stderr))
         if self.keep_return:
-            self.result_queue.append(stdout)
+            if self.id in self.result_queue:
+                self.result_queue[self.id].append(stdout)
+            else:
+                self.result_queue[self.id] = [stdout]
+            log.info('Appending something onto clientrequest result_queue with id %s and it now looks like %s' % (self.id, self.result_queue))
         if stderr:
             # FIXME record error
             return FAILED, stderr
@@ -113,19 +120,38 @@ class HTTPRequest(Request):
 
 class XMLRPCRequest(HTTPRequest):
 
-    def __init__(self, method, param=None, *args, **kw):
+    result_queue = Manager().dict()
+
+    def __init__(self, method, method_args, param=None, *args, **kw):
         super(XMLRPCRequest, self).__init__(*args, **kw)
         self.method = method
-        self.param = param
+        self.method_args = method_args
         self.headers = {'Content-Type' : 'text/xml'}
-
-    def run(self):
-        # FIXME do exception handling and params
         self.rpc = xmlrpclib.ServerProxy(self.server + self.xmlproxy, allow_none=True)
         for prop in self.method.split("."):
             self.rpc = getattr(self.rpc, prop)
-        self.response = self.rpc(self.param) 
-        return PASSED, self.response #FIXME need to check for errors
+
+    def run(self):
+        # FIXME do exception handling and params
+        response = self.rpc(*self.method_args) 
+        return PASSED, response #FIXME need to check for errors
+
+class JSONRPCRequest(HTTPRequest):
+
+    result_queue = Manager().dict()
+
+    def __init__(self, method, method_args, param=None, *args, **kw):
+        super(JSONRPCRequest, self).__init__(*args, **kw)
+        self.method = method
+        self.method_args = method_args
+        self.rpc = jsonrpclib.ServerProxy(self.server + self.xmlproxy, allow_none=True)
+        for prop in self.method.split("."):
+            self.rpc = getattr(self.rpc, prop)
+       
+    def run(self):
+        # FIXME do exception handling and params
+        response = self.rpc(*self.method_args) 
+        return PASSED, response #FIXME need to check for errors
 
 
 class LoadProcessor:

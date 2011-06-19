@@ -75,7 +75,7 @@ class LoadManager(object):
             elif section.tag == 'xmlproxy':
                  setattr(Request, section.tag, section.get('value', None))
             elif section.tag == 'graphiteserver':
-                setattr(graphite_report, 'server', section.get('value'))
+                setattr(graphite_report.GraphiteReport, 'server', section.get('value'))
 
         load_profile = dom.xpath('/root/load/user')
         for user in load_profile:
