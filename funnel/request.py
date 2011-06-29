@@ -5,10 +5,12 @@ import xmlrpclib
 import jsonrpclib
 import logging
 import time
+import itertools
 from multiprocessing import Manager
 from datetime import datetime, timedelta
 from funnel.loader import LoadManager
 from copy import copy
+from time import sleep
 
 log = logging.getLogger(__name__)
 log.addHandler(logging.StreamHandler())
@@ -16,7 +18,6 @@ log.addHandler(logging.StreamHandler())
 now = datetime.now
 FAILED = 'fail'
 PASSED = 'pass'
-
 def get_in_minutes(number, unit):
     if unit == 'minute':
         return float(number)
@@ -49,7 +50,7 @@ class RequestFactory(object):
         req = None
         # XXX move this out to a request dir where each class is a module
         if type == 'xmlrpc':
-            req = XMLRPCRequest(*args, **kw)
+            req = XMLRPCRequest(*args, **kw) 
         if type == 'jsonrpc':
             req = JSONRPCRequest(*args, **kw)
         if type == 'http':
@@ -98,7 +99,7 @@ class ClientRequest(Request):
                 arg = arg()
             runnable_cmd.append(arg)
         log.info('Running %s' % runnable_cmd)
-        p = subprocess.Popen(runnable_cmd, stdout=subprocess.PIPE)
+        p = subprocess.Popen(runnable_cmd, stdout=subprocess.PIPE, close_fds=True)
         stdout, stderr = p.communicate() 
         log.debug('Stdout: %s, Stderr: %s' % (stdout, stderr))
         if self.keep_return:
@@ -127,12 +128,12 @@ class XMLRPCRequest(HTTPRequest):
         self.method = method
         self.method_args = method_args
         self.headers = {'Content-Type' : 'text/xml'}
-        self.rpc = xmlrpclib.ServerProxy(self.server + self.xmlproxy, allow_none=True)
-        for prop in self.method.split("."):
-            self.rpc = getattr(self.rpc, prop)
 
     def run(self):
         # FIXME do exception handling and params
+        self.rpc = xmlrpclib.ServerProxy(self.server + self.xmlproxy, allow_none=True)
+        for prop in self.method.split("."):
+            self.rpc = getattr(self.rpc, prop)
         response = self.rpc(*self.method_args) 
         return PASSED, response #FIXME need to check for errors
 
@@ -143,13 +144,14 @@ class JSONRPCRequest(HTTPRequest):
     def __init__(self, method, method_args, param=None, *args, **kw):
         super(JSONRPCRequest, self).__init__(*args, **kw)
         self.method = method
+        self.headers = {'Content-Type' : 'application/json-rpc'}
         self.method_args = method_args
-        self.rpc = jsonrpclib.ServerProxy(self.server + self.xmlproxy, allow_none=True)
-        for prop in self.method.split("."):
-            self.rpc = getattr(self.rpc, prop)
        
     def run(self):
         # FIXME do exception handling and params
+        self.rpc = jsonrpclib.ServerProxy(self.server + self.xmlproxy, allow_none=True)
+        for prop in self.method.split("."):
+            self.rpc = getattr(self.rpc, prop)
         response = self.rpc(*self.method_args) 
         return PASSED, response #FIXME need to check for errors
 
