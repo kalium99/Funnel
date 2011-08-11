@@ -18,12 +18,16 @@ log = logging.getLogger(__name__)
 now = datetime.now
 
 def _parser():
-    parser = OptionParser('usage: %prog [options] --profile=PROFILE_FILE',
+    parser = OptionParser('usage: %prog [options]',
             description='Runs a load profile against a target server')
     parser.add_option('-l','--log', 
         help="sets log level")
     parser.add_option('-p','--profile', 
         help="sets load profile")
+    parser.add_option('-s','--load-server', 
+        help="the server to be targeted")
+    parser.add_option('-g','--graphite-server', 
+        help="If using graphite, the server to send results to")
     return parser
 
 
@@ -35,9 +39,12 @@ def main():
         opts.log = 'INFO'
     if not opts.profile:
         parser.error('Specify a load profile with --profile')
+    load_server = opts.load_server
+    #Not used if not using graphite:
+    graphite_server = opts.graphite_server
     lvl = getattr(logging, opts.log.upper(), logging.ERROR)
     logging.basicConfig(level=lvl)
-    manager = LoadManager(opts.profile)
+    manager = LoadManager(opts.profile, load_server=load_server, graphite_server=graphite_server)
     manager.start()
 
 
@@ -45,10 +52,12 @@ class LoadManager(object):
 
     _last_session = {}
 
-    def __init__(self,profile_file):
+    def __init__(self,profile_file, load_server=None, graphite_server=None):
         self.start_time = now()
         self.agents = []
         self.profile = profile_file
+        self.load_server = load_server
+        self.graphite_server = graphite_server
         self._build_agents()
 
     def _build_agents(self):
@@ -62,6 +71,9 @@ class LoadManager(object):
         dom = etree.parse(self.profile)
         config = dom.xpath('//config')[0]
         config_options = {}
+        Request.server = self.load_server
+        #Not used if not using graphite
+        graphite_report.GraphiteReport.server = self.graphite_server
         for section in config.getchildren():
             # XXX use another function/class to do this work with a dispatch table or somehing
             if section.tag == 'baseload':
@@ -70,11 +82,11 @@ class LoadManager(object):
                 else: 
                     Session.baseload[section.get('session')] = \
                         get_rate_in_seconds(section.get('requests'), section.get('unit'))
-            elif section.tag =='server':
+            elif section.tag =='server' and not Request.server:
                 setattr(Request, section.tag, section.get('value', None))
             elif section.tag == 'xmlproxy':
                  setattr(Request, section.tag, section.get('value', None))
-            elif section.tag == 'graphiteserver':
+            elif section.tag == 'graphiteserver' and not graphite_report.GraphiteReport.server:
                 setattr(graphite_report.GraphiteReport, 'server', section.get('value'))
 
         load_profile = dom.xpath('/root/load/user')
