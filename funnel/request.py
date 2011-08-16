@@ -6,6 +6,8 @@ import jsonrpclib
 import logging
 import time
 import itertools
+import errno
+import Queue
 from multiprocessing import Manager
 from datetime import datetime, timedelta
 from funnel.loader import LoadManager
@@ -71,6 +73,9 @@ class Request(object):
         self.id = id
         #self.result_queue = share
 
+    def cleanup(self):
+        pass
+
     def run(self, *args, **kw):
         """Prepare and execute hit on server
 
@@ -82,8 +87,9 @@ class Request(object):
 
         
 class ClientRequest(Request):
-     
+    
     result_queue = Manager().dict()
+    process_queue = Queue.Queue()
   
     def __init__(self, cmd, args=None,  keep_return=False, *a, **kw):
         super(ClientRequest, self).__init__(*a, **kw)
@@ -92,22 +98,37 @@ class ClientRequest(Request):
         self.cmd = self.cmd.split(" ") 
         self.args = args or []
 
+    def cleanup(self):
+        log.debug('In ClientRequest.cleanup')
+        while True:
+            try:
+                p = self.process_queue.get(False)
+            except Queue.Empty:
+                break
+            try:
+                p.terminate()
+            except OSError, e:
+                if e.errno == errno.ERSCH: #No Such Process
+                    pass
+                else:
+                    raise
     def run(self):
         runnable_cmd = copy(self.cmd)
         for arg in self.args:
             if callable(arg):
                 arg = arg()
             runnable_cmd.append(arg)
-        log.info('Running %s' % runnable_cmd)
-        p = subprocess.Popen(runnable_cmd, stdout=subprocess.PIPE, close_fds=True)
-        stdout, stderr = p.communicate() 
+        log.debug('Running %s' % runnable_cmd)
+        self.p = subprocess.Popen(runnable_cmd, stdout=subprocess.PIPE, close_fds=True)
+        self.process_queue.put(self.p)
+        stdout, stderr = self.p.communicate() 
         log.debug('Stdout: %s, Stderr: %s' % (stdout, stderr))
         if self.keep_return:
             if self.id in self.result_queue:
                 self.result_queue[self.id].append(stdout)
             else:
                 self.result_queue[self.id] = [stdout]
-            log.info('Appending something onto clientrequest result_queue with id %s and it now looks like %s' % (self.id, self.result_queue))
+            log.debug('Appending something onto clientrequest result_queue with id %s and it now looks like %s' % (self.id, self.result_queue))
         if stderr:
             # FIXME record error
             return FAILED, stderr
@@ -216,7 +237,7 @@ class LoadProcessor:
         return { arg.get('name') : arg.get('value') }
         
 
-class User(object):
+class User:
 
     data_share = Manager().dict()
 
@@ -233,6 +254,9 @@ class User(object):
         else:
             # XXX do try/except for division errors
             self.interval = timedelta(seconds=self.session.baseload.get(session_name) / float(load_level))
+
+    def cleanup(self):
+        self.session.cleanup()
  
     def run(self):
         result = self.session.run()

@@ -28,6 +28,9 @@ def _parser():
         help="the server to be targeted")
     parser.add_option('-g','--graphite-server', 
         help="If using graphite, the server to send results to")
+    parser.add_option('-c','--ssl', 
+        action="store_true",
+        help="If your target server is setup for ssl, then use this option")
     return parser
 
 
@@ -42,9 +45,11 @@ def main():
     load_server = opts.load_server
     #Not used if not using graphite:
     graphite_server = opts.graphite_server
+    ssl = opts.ssl
     lvl = getattr(logging, opts.log.upper(), logging.ERROR)
     logging.basicConfig(level=lvl)
-    manager = LoadManager(opts.profile, load_server=load_server, graphite_server=graphite_server)
+    manager = LoadManager(opts.profile, load_server=load_server, 
+        ssl=ssl, graphite_server=graphite_server)
     manager.start()
 
 
@@ -52,12 +57,13 @@ class LoadManager(object):
 
     _last_session = {}
 
-    def __init__(self,profile_file, load_server=None, graphite_server=None):
+    def __init__(self,profile_file, load_server=None, graphite_server=None, ssl=False):
         self.start_time = now()
         self.agents = []
         self.profile = profile_file
         self.load_server = load_server
         self.graphite_server = graphite_server
+        self.ssl = ssl
         self._build_agents()
 
     def _build_agents(self):
@@ -71,7 +77,11 @@ class LoadManager(object):
         dom = etree.parse(self.profile)
         config = dom.xpath('//config')[0]
         config_options = {}
-        Request.server = self.load_server
+        if self.ssl:
+            server_proto = 'https'
+        else:
+            server_proto = 'http'
+        Request.server = '%s://%s' % (server_proto, self.load_server)
         #Not used if not using graphite
         graphite_report.GraphiteReport.server = self.graphite_server
         for section in config.getchildren():
@@ -114,7 +124,7 @@ class LoadManager(object):
         it needs to adhere to (as dictated by the load.xml)
 
         """
-        # start the agent threads
+        # start the agent Process
         for agent in self.agents:
             log.info('Starting new agent') #FIXME add in detail here
             agent.start()
@@ -165,6 +175,10 @@ class LoadAgent(Process):
                 return transition_target_interval 
             return (transition_target_interval - current_interval) / transition_time + current_interval
          return f  
+
+    def cleanup(self):
+        log.debug('In LoadAgent.cleanup')
+        self.user.cleanup()
                    
     def run(self):
         """Runs individual request/hit as thread
@@ -196,28 +210,34 @@ class LoadAgent(Process):
             transitioning = False
         self.user.session.set_previous_interval(current_interval)
         user_run = self.user.run
-        while True:
-            if expiration_time < now():
-                break #We are finished
-            run_thread = Thread(target=user_run)
-            run_thread.setDaemon(False)
+        self.user_threads = []
+        try:
             while True:
-                try:
-                    run_thread.start()
+                if expiration_time < now():
+                    break #We are finished
+                run_thread = Thread(target=user_run)
+                run_thread.setDaemon(False)
+                self.user_threads.append(run_thread)
+                while True:
+                    try:
+                        run_thread.start()
+                        break
+                    except: #perhaps we have created too many threads
+                        sleep(0.1)
+                        continue
+                if transitioning:
+                    interval_seconds = get_transition_interval(interval_seconds)
+                    if interval_seconds == get_interval_seconds():
+                        transitioning = False
+                if interval_seconds is None: #this should only be set by run_once
+                    # When we have no interval, we need to control the duration here
+                    sleep(timedelta(minutes=self.user.duration_minutes).total_seconds())
                     break
-                except: #perhaps we have created too many threads
-                    sleep(0.1)
-                    continue
-            if transitioning:
-                interval_seconds = get_transition_interval(interval_seconds)
-                if interval_seconds == get_interval_seconds():
-                    transitioning = False
-            if interval_seconds is None: #this should only be set by run_once
-                # When we have no interval, we need to control the duration here
-                sleep(timedelta(minutes=self.user.duration_minutes).total_seconds())
-                break
-            log.info('Waiting for  %s' % interval_seconds)
-            sleep(interval_seconds)
+                log.info('Waiting for  %s' % interval_seconds)
+                sleep(interval_seconds)
+            self.cleanup()
+        finally:
+            self.cleanup()
                 
     
 class ResultWriter(Thread):
