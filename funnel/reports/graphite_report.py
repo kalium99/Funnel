@@ -4,6 +4,7 @@ import logging
 import time
 
 now = datetime.now
+date_prefix = now().strftime('%Y%m%d')
 
 class GraphiteReport:
 
@@ -17,7 +18,7 @@ def report_event(target, val=1):
     if not target:
         raise ValueError('Must specify a proper target namespace')
 	
-    GraphiteReport.result_server().send('%s %d %s\n' % (target, val, int(time.time())))
+    GraphiteReport.result_server().send('%s.%s %d %s\n' % (date_prefix, target, val, int(time.time())))
 
 def report(f):
     result_server = GraphiteReport.result_server()
@@ -32,12 +33,12 @@ def report(f):
             result, output = f(instance, *args)
         except Exception, e:
             logging.exception(e)
-            result_server.send('beaker.load.error.%s 1 %d\n' % (instance.id, int(time.time())))
+            result_server.send('%s.beaker.load.error.%s 1 %d\n' % (date_prefix,instance.id, int(time.time())))
             return
             
         finish = now()
         response_time = (finish - start)
-        result_server.send('beaker.load.response.%s %f %d\n' % (instance.id, response_time.total_seconds(), int(time.time())))
-        result_server.send('beaker.load.hit.single.%s 1 %s\n' % (instance.id, int(time.time())))
+        result_server.send('%s.beaker.load.response.%s %f %d\n' % (date_prefix, instance.id, response_time.total_seconds(), int(time.time())))
+        result_server.send('%s.beaker.load.hit.single.%s 1 %s\n' % (date_prefix, instance.id, int(time.time())))
 
     return the_run
