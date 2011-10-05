@@ -13,7 +13,7 @@ from lxml import etree
 from funnel.reports import graphite_report
 
 import logging
-log = logging.getLogger(__name__)
+log = logging.getLogger('funnel')
 
 now = datetime.now
 
@@ -238,26 +238,6 @@ class LoadAgent(Process):
             self.cleanup()
         finally:
             self.cleanup()
-                
-    
-class ResultWriter(Thread):
-    def __init__(self, q, start_time):
-        Thread.__init__(self)
-        self.q = q
-        self.start_time = start_time
-    
-    def run(self):
-        f = open('results.csv', 'a')
-        while True:
-            q_tuple = self.q.get(True)
-            trans_end_time, response_time, status, output = q_tuple
-            elapsed = (trans_end_time - self.start_time)
-            response_time_seconds = response_time.total_seconds()
-            elapsed_seconds = elapsed.total_seconds()
-            f.write('%.3f,%.3f,%s,%s\n' % (elapsed_seconds, response_time_seconds, status, output))
-            f.flush()
-            print '%.3f' % response_time_seconds
-
-
+ 
 if __name__ == '__main__':
     main()
