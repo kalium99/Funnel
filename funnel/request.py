@@ -14,8 +14,9 @@ from funnel.loader import LoadManager
 from copy import copy
 from time import sleep
 
-log = logging.getLogger(__name__)
+log = logging.getLogger('funnel')
 log.addHandler(logging.StreamHandler())
+log.setLevel(logging.DEBUG)
 
 now = datetime.now
 FAILED = 'fail'
@@ -107,11 +108,13 @@ class ClientRequest(Request):
                 break
             try:
                 p.terminate()
+                log.debug('Terminated process')
             except OSError, e:
                 if e.errno == errno.ERSCH: #No Such Process
                     pass
                 else:
                     raise
+
     def run(self):
         runnable_cmd = copy(self.cmd)
         for arg in self.args:
@@ -119,16 +122,23 @@ class ClientRequest(Request):
                 arg = arg()
             runnable_cmd.append(arg)
         log.debug('Running %s' % runnable_cmd)
-        self.p = subprocess.Popen(runnable_cmd, stdout=subprocess.PIPE, close_fds=True)
+        # FIXME piping stdout to screen should be removed beyond testing
+        if logging.lvl = logging.DEBUG:
+            output = subprocess.PIPE
+        else:
+            output = None
+        self.p = subprocess.Popen(runnable_cmd, stdout=output, close_fds=True)
         self.process_queue.put(self.p)
         stdout, stderr = self.p.communicate() 
-        log.debug('Stdout: %s, Stderr: %s' % (stdout, stderr))
+        if stderr:
+            log.debug('Stderr: %s' % stderr)
         if self.keep_return:
             if self.id in self.result_queue:
                 self.result_queue[self.id].append(stdout)
             else:
                 self.result_queue[self.id] = [stdout]
-            log.debug('Appending something onto clientrequest result_queue with id %s and it now looks like %s' % (self.id, self.result_queue))
+            log.debug('Appending onto %s result_queue with id %s and it now looks like %s' % \
+                (self.__class__.__name__, self.id, self.result_queue))
         if stderr:
             # FIXME record error
             return FAILED, stderr
@@ -256,6 +266,7 @@ class User:
             self.interval = timedelta(seconds=self.session.baseload.get(session_name) / float(load_level))
 
     def cleanup(self):
+        log.debug('In User cleanup')
         self.session.cleanup()
  
     def run(self):
