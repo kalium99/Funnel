@@ -15,7 +15,6 @@ from copy import copy
 from time import sleep
 
 log = logging.getLogger('funnel')
-log.addHandler(logging.StreamHandler())
 log.setLevel(logging.DEBUG)
 
 now = datetime.now
@@ -123,22 +122,19 @@ class ClientRequest(Request):
             runnable_cmd.append(arg)
         log.debug('Running %s' % runnable_cmd)
         # FIXME piping stdout to screen should be removed beyond testing
-        if logging.lvl = logging.DEBUG:
-            output = subprocess.PIPE
-        else:
-            output = None
-        self.p = subprocess.Popen(runnable_cmd, stdout=output, close_fds=True)
+        self.p = subprocess.Popen(runnable_cmd, stdout=subprocess.PIPE, close_fds=True)
         self.process_queue.put(self.p)
         stdout, stderr = self.p.communicate() 
         if stderr:
             log.debug('Stderr: %s' % stderr)
         if self.keep_return:
             if self.id in self.result_queue:
-                self.result_queue[self.id].append(stdout)
+                q_ = self.result_queue[self.id]
+                q_.append(stdout)
+                self.result_queue[self.id] = q_
             else:
                 self.result_queue[self.id] = [stdout]
-            log.debug('Appending onto %s result_queue with id %s and it now looks like %s' % \
-                (self.__class__.__name__, self.id, self.result_queue))
+        log.debug('Returning from ClientRequest')
         if stderr:
             # FIXME record error
             return FAILED, stderr
@@ -265,12 +261,16 @@ class User:
             # XXX do try/except for division errors
             self.interval = timedelta(seconds=self.session.baseload.get(session_name) / float(load_level))
 
+    def __str__(self):
+        return '%s:%s' % (self.session.__class__.__module__, self.duration_minutes)
+
     def cleanup(self):
         log.debug('In User cleanup')
         self.session.cleanup()
  
     def run(self):
         result = self.session.run()
+        log.debug('Returning from User') 
         return result
 
 class SessionFactory(object):

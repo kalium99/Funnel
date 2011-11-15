@@ -10,7 +10,9 @@ from threading import Thread
 from multiprocessing import Process, Queue, Manager
 import ConfigParser
 from lxml import etree
-from funnel.reports import graphite_report
+from funnel.reports import graphite_report #This should monkey patch itself in
+from funnel.reports import local_report 
+from funnel import startup
 
 import logging
 log = logging.getLogger('funnel')
@@ -31,6 +33,8 @@ def _parser():
     parser.add_option('-c','--ssl', 
         action="store_true",
         help="If your target server is setup for ssl, then use this option")
+    parser.add_option('-r','--report', action='append', dest='reports',
+        help="The type of reporting to use")
     return parser
 
 
@@ -44,12 +48,18 @@ def main():
         parser.error('Specify a load profile with --profile')
     load_server = opts.load_server
     #Not used if not using graphite:
+    #fixme, not passing this into LoadManager contructor anymore
     graphite_server = opts.graphite_server
     ssl = opts.ssl
     lvl = getattr(logging, opts.log.upper(), logging.ERROR)
     logging.basicConfig(level=lvl)
+    
+    # Anything that needs to be done before we run our load
+    # should be appended to funnel.startup.call_on_startup,
+    # and will be called by do_startup()
+    startup.do_startup()
     manager = LoadManager(opts.profile, load_server=load_server, 
-        ssl=ssl, graphite_server=graphite_server)
+        ssl=ssl)
     manager.start()
 
 
@@ -62,7 +72,6 @@ class LoadManager(object):
         self.agents = []
         self.profile = profile_file
         self.load_server = load_server
-        self.graphite_server = graphite_server
         self.ssl = ssl
         self._build_agents()
 
@@ -83,7 +92,6 @@ class LoadManager(object):
             server_proto = 'http'
         Request.server = '%s://%s' % (server_proto, self.load_server)
         #Not used if not using graphite
-        graphite_report.GraphiteReport.server = self.graphite_server
         for section in config.getchildren():
             # XXX use another function/class to do this work with a dispatch table or somehing
             if section.tag == 'baseload':
@@ -126,7 +134,7 @@ class LoadManager(object):
         """
         # start the agent Process
         for agent in self.agents:
-            log.info('Starting new agent') #FIXME add in detail here
+            log.info('Starting agent: %s' % agent) #FIXME add in detail here
             agent.start()
         for agent in self.agents:
             agent.join()
@@ -137,6 +145,9 @@ class LoadAgent(Process):
         Process.__init__(self)
         self.user = user
         self.delay=delay
+
+    def __str__(self):
+        return str(self.user)
 
     def _transition_closure(self, start_time, transition_time, transition_target_interval):
  
@@ -214,9 +225,10 @@ class LoadAgent(Process):
         try:
             while True:
                 if expiration_time < now():
+                    log.debug('Exiting agent %s' % self)
                     break #We are finished
                 run_thread = Thread(target=user_run)
-                run_thread.setDaemon(False)
+                run_thread.setDaemon(True)
                 self.user_threads.append(run_thread)
                 while True:
                     try:
@@ -232,12 +244,45 @@ class LoadAgent(Process):
                 if interval_seconds is None: #this should only be set by run_once
                     # When we have no interval, we need to control the duration here
                     sleep(timedelta(minutes=self.user.duration_minutes).total_seconds())
+                    log.debug('Exiting agent %s' % self)
                     break
                 log.info('Waiting for  %s' % interval_seconds)
                 sleep(interval_seconds)
-            self.cleanup()
         finally:
+            for t in self.user_threads:
+                t.join()
             self.cleanup()
+            sys.exit()
+
+def run_main(**kw):
+    """
+    run_main is desined to test funnel by passing options as **kwargs
+    rather than pasing them in the shell and having them dissected by the
+    opts parser. Useful for testing!
+    """
+    # XXX We should be able to decouple the logic from test_main() and main()
+    # and have light wrappers for each
+    if 'load_server' in kw:
+        load_server = kw['load_server']
+    if 'profile' in kw:
+        profile = kw['profile']
+    if 'graphite_server' in kw:
+        graphite_server = kw['graphite_server']
+    if 'log' in kw:
+        log = kw['log']
+    else:
+        log = 'INFO'
+
+    if 'ssl' in kw:
+        ssl = kw['ssl']
+    else:
+        ssl = False
+
+    lvl = getattr(logging, log.upper(), logging.ERROR)
+    logging.basicConfig(level=lvl)
+    manager = LoadManager(profile, load_server=load_server, 
+        ssl=ssl)
+    manager.start()
  
 if __name__ == '__main__':
     main()
