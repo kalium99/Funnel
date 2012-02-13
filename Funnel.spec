@@ -7,7 +7,7 @@
 Summary: Funnel is a tool for general performance/load tests
 Name: %{name}
 Version: %{version}
-Release: %{release}
+Release: %{release}%{?dist}
 Source0: %{name}-%{unmangled_version}.tar.gz
 License: UNKNOWN
 Group: Development/Libraries
