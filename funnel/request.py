@@ -109,7 +109,7 @@ class ClientRequest(Request):
                 p.terminate()
                 log.debug('Terminated process')
             except OSError, e:
-                if e.errno == errno.ERSCH: #No Such Process
+                if e.errno == errno.ESRCH: #No Such Process
                     pass
                 else:
                     raise

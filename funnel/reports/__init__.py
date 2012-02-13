@@ -5,6 +5,9 @@ except ImportError:
     __path__ = extend_path(__path__, __name__)
 from datetime import datetime
 import time
+import logging
+
+log = logging.getLogger(__name__)
 
 _plugins = []
 _now = datetime.now
@@ -28,7 +31,7 @@ def report(f):
             # XXX result and output currently not used...
             result, output = f(instance, *args)
         except Exception, e:
-            logging.exception(e)
+            log.exception(e)
             for handle in _plugins:
                 handle.report_failure(instance.id, int(time.time()))
             return    

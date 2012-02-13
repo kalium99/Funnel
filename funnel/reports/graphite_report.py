@@ -5,7 +5,7 @@ from datetime import datetime
 import logging
 import time
 log = logging.getLogger('funnel')
-_now = datetime.now
+_now = datetime.utcnow
 _date_prefix = _now().strftime('%Y%m%d')
 
 def report_event(target, val=1):
