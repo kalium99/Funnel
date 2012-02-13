@@ -2,7 +2,7 @@
 %define version 0.1.0
 %define unmangled_version 0.1.0
 %define unmangled_version 0.1.0
-%define release 2
+%define release 3
 
 Summary: Funnel is a tool for general performance/load tests
 Name: %{name}
