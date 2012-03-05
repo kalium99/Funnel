@@ -5,16 +5,20 @@ import logging
 from datetime import datetime
 from funnel.startup import call_on_startup
 from funnel.reports import enable_report_plugin
+from funnel.config import config_reader
 
-log = logging.getLogger('funnel')
+config = config_reader(__name__)
+log = logging.getLogger(__name__)
 now = datetime.now
-error_file = 'funnel_errors_%s.csv' % time.strftime('%Y%m%d%H%M')
-results_file = 'funnel_results_%s.csv' % time.strftime('%Y%m%d%H%M')
+error_file = config.get('error_log')
+results_file = config.get('results_file')
+error_file = '%s_%s.csv' % (error_file, time.strftime('%Y%m%d%H%M'))
+results_file = '%s_%s.csv' % (error_file, time.strftime('%Y%m%d%H%M'))
 
 
 class LocalReport:
 
-    def __init__(self, *args, **kw): 
+    def __init__(self, *args, **kw):
         self.results = open(results_file, 'wb')
         self.error = open(error_file, 'wb')
 
