@@ -7,7 +7,7 @@ import logging
 import time
 import sys
 
-config = config_reader(__name__)
+config = config_reader('reports.graphite_report')
 log = logging.getLogger(__name__)
 _now = datetime.utcnow
 _date_prefix = _now().strftime('%Y%m%d')
@@ -18,8 +18,6 @@ def report_event(target, val=1):
     GraphiteReport().result_server.send('%s.%s %d %s\n' % (_date_prefix, target, val, int(time.time())))
 
 class GraphiteReport:
-    # FIXME change this so server is in a config or something
-    # Biggest hack ever
     try:
         server = config.get('server')
     except KeyError:
@@ -44,7 +42,10 @@ class GraphiteReport:
         self.result_server.send('%s.beaker.load.error.%s 1 %d\n' % (_date_prefix,id, current_timestamp))
 
 def add_graphite_report_plugin():
-    log.info('Enabling graphite plugin')
-    enable_report_plugin(GraphiteReport())
+    if config.get('disabled'):
+        log.info('Disabling graphite plugin')
+    else:
+        log.info('Enabling graphite plugin')
+        enable_report_plugin(GraphiteReport())
 
 call_on_startup.append(add_graphite_report_plugin)

@@ -150,7 +150,7 @@ class XMLRPCRequest(HTTPRequest):
 
     result_queue = Manager().dict()
 
-    def __init__(self, method, method_args, param=None, *args, **kw):
+    def __init__(self, method, method_args, *args, **kw):
         super(XMLRPCRequest, self).__init__(*args, **kw)
         self.method = method
         self.method_args = method_args
@@ -190,10 +190,13 @@ class LoadProcessor:
     LoadProcessor takes elements from the load.xml and returns the data
     we care about in a form we can deal with
     """
-    
+
+    _valid_time_units = {'minute' : 1,
+                         'second' : 1,
+                         'hour' : 1, }
+
     def __init__(self, *agrs, **kw):
         pass
-       
 
     @classmethod
     def process(cls, element):
@@ -203,13 +206,37 @@ class LoadProcessor:
         else:
             return f(element)
 
-    @classmethod 
+    @classmethod
+    def _process_var(cls, element):
+        var_name = element.get('name')
+        var_val = element.text
+        return {var_name : var_val}
+
+    @classmethod
+    def process_vars(cls, element):
+        # Get vars and load them into a dict in the session class  
+        session = element.get('session')
+        if not session:
+            raise ValueError('vars needs a session')
+        vars_ = {}
+        for var in element.getchildren():
+            if var.tag != 'var':
+                raise ValueError # XXX make this better
+            vars_.update(cls._process_var(var))
+        return { session : vars_ }
+
+    @classmethod
     def process_user(cls, user):
+        time_unit = user.get('unit')
+        if time_unit not in cls._valid_time_units:
+            raise ValueError('%s is not a valid time unit. Please use one of %s' % ( time_unit, ','.join(cls._valid_time_units.keys())))
         user_deets = {}
+        # XXX Do error checking here
+        run_once = user.get('run_once')
         user_deets['run_once'] = user.get('run-once')
         user_deets['load_level'] = user.get('load-level')
         user_deets['session'] = user.get('session')
-        user_deets['duration_minutes'] = get_in_minutes(user.get('duration'), user.get('unit'))
+        user_deets['duration_minutes'] = get_in_minutes(user.get('duration'), time_unit)
         transition = user.get('transition')
         if transition is not None:
             transition = re.sub('%','', transition)
@@ -219,13 +246,13 @@ class LoadProcessor:
         else:
             user_deets['transition_time'] = 0
         delay = user.get('delay', 0)
-        user_deets['delay'] = get_in_seconds(delay, user.get('unit'))
+        user_deets['delay'] = get_in_seconds(delay, time_unit)
         return user_deets
 
     @classmethod
     def process_request(cls, request):
         request_deets = {}
-        #equest_attributes = dict(request.items()) 
+        #equest_attributes = dict(request.items())
         request_deets['type'] = request.get('type')
         request_deets['interval_seconds'] = get_in_seconds(
             float(request.get('interval')), request.get('unit'))
@@ -236,20 +263,21 @@ class LoadProcessor:
     def process_param(cls, param):
         param_deets = {}
         param_deets[param.get('name')] = param.get('value')
-        return param_deets 
+        return param_deets
 
     @classmethod
     def process_arg(cls, arg):
         return { arg.get('name') : arg.get('value') }
-        
+
 
 class User:
 
     data_share = Manager().dict()
 
-    def __init__(self, duration_minutes, load_level, session_name, transition_time, session_args, run_once):
+    def __init__(self, duration_minutes, load_level, session_name,
+        transition_time, session_args, session_baseload, run_once):
         self.duration_minutes = duration_minutes
-        self.session = SessionFactory.create(session_name)(self.data_share, session_args)
+        self.session = SessionFactory.create(session_name)(self.data_share, session_args, session_baseload)
         self.transition_time = transition_time
         if load_level == 'x': # if we want to blitz the server
             self.interval = timedelta(seconds=0.01) # Try not to overwhelm the host machine
@@ -259,7 +287,7 @@ class User:
             self.interval = None
         else:
             # XXX do try/except for division errors
-            self.interval = timedelta(seconds=self.session.baseload.get(session_name) / float(load_level))
+            self.interval = timedelta(seconds=self.session.baseload / float(load_level))
 
     def __str__(self):
         return '%s:%s' % (self.session.__class__.__module__, self.duration_minutes)
@@ -277,9 +305,10 @@ class SessionFactory(object):
 
     @classmethod
     def create(cls, session_name):
-        _temp = __import__('funnel.sessions', globals(), locals(), [session_name])
-        session_ref = getattr(_temp, session_name)
+        session_ref = __import__('funnel.sessions.%s' % session_name, {}, {}, [session_name])
         if session_ref is None:
-            raise ValueError('%s is not a valid session' % session_name) 
+            raise ValueError('%s is not a valid session' % session_name)
 
-        return session_ref.Session  
+        def f(*args):
+            return session_ref.Session(session_name, *args)
+        return f

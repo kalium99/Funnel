@@ -14,7 +14,7 @@ _now = datetime.now
 
 def enable_report_plugin(plugin_obj):
     _plugins.append(plugin_obj)
-   
+
 def report(f):
     """
     reporter() should be the only wrapper for functions which are to be reported on
@@ -26,7 +26,7 @@ def report(f):
         """Sends data to graphite server
         sends error count, hit count, and response times
         """
-        start = _now() 
+        start = _now()
         try:
             # XXX result and output currently not used...
             result, output = f(instance, *args)
@@ -34,10 +34,9 @@ def report(f):
             log.exception(e)
             for handle in _plugins:
                 handle.report_failure(instance.id, int(time.time()))
-            return    
+            return
         finish = _now()
         response_time = (finish - start)
         for handle in _plugins:
             handle.report_success(instance.id, response_time, int(time.time()))
     return the_run
-        

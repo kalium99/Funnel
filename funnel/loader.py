@@ -11,7 +11,7 @@ from multiprocessing import Process, Queue, Manager
 import ConfigParser
 from lxml import etree
 from funnel.reports import graphite_report #This should monkey patch itself in
-from funnel.reports import local_report 
+from funnel.reports import local_report
 from funnel import startup
 
 import logging
@@ -47,18 +47,15 @@ def main():
     if not opts.profile:
         parser.error('Specify a load profile with --profile')
     load_server = opts.load_server
-    #Not used if not using graphite:
-    #fixme, not passing this into LoadManager contructor anymore
-    graphite_server = opts.graphite_server
     ssl = opts.ssl
     lvl = getattr(logging, opts.log.upper(), logging.ERROR)
     logging.basicConfig(level=lvl)
-    
+
     # Anything that needs to be done before we run our load
     # should be appended to funnel.startup.call_on_startup,
     # and will be called by do_startup()
     startup.do_startup()
-    manager = LoadManager(opts.profile, load_server=load_server, 
+    manager = LoadManager(opts.profile, load_server=load_server,
         ssl=ssl)
     manager.start()
 
@@ -67,7 +64,7 @@ class LoadManager(object):
 
     _last_session = {}
 
-    def __init__(self,profile_file, load_server=None, graphite_server=None, ssl=False):
+    def __init__(self,profile_file, load_server=None, ssl=False):
         self.start_time = now()
         self.agents = []
         self.profile = profile_file
@@ -79,7 +76,7 @@ class LoadManager(object):
         """Builds agents that generate load
 
         Agents control running of Sessions.
-        Agents are a sub class of multipriocessing.Process
+        Agents are a sub class of multiprocessing.Process
         """
         from request import RequestFactory, FAILED, PASSED, Request, LoadProcessor, get_rate_in_seconds, User
         from sessions.session import Session
@@ -91,41 +88,42 @@ class LoadManager(object):
         else:
             server_proto = 'http'
         Request.server = '%s://%s' % (server_proto, self.load_server)
-        #Not used if not using graphite
+        session_vars = {}
+        session_baseload = {}
         for section in config.getchildren():
-            # XXX use another function/class to do this work with a dispatch table or somehing
+            # XXX TODO use another function/class to do this work with a dispatch table or somehing
             if section.tag == 'baseload':
                 if not section.get('unit'): # we aren't a rate
-                    Session.baseload[section.get('session')] = section.get('requests')
-                else: 
-                    Session.baseload[section.get('session')] = \
+                    session_baseload[section.get('session')] = section.get('requests')
+                else:
+                    session_baseload[section.get('session')] = \
                         get_rate_in_seconds(section.get('requests'), section.get('unit'))
             elif section.tag =='server' and not Request.server:
                 setattr(Request, section.tag, section.get('value', None))
             elif section.tag == 'xmlproxy':
                  setattr(Request, section.tag, section.get('value', None))
-            elif section.tag == 'graphiteserver' and not graphite_report.GraphiteReport.server:
-                setattr(graphite_report.GraphiteReport, 'server', section.get('value'))
+            elif section.tag == 'vars':
+                session_vars.update(LoadProcessor.process(section))
 
         load_profile = dom.xpath('/root/load/user')
         for user in load_profile:
             processed_user = LoadProcessor.process(user)
-            load_level = processed_user['load_level'] 
+            load_level = processed_user['load_level']
             session = processed_user['session']
             duration_minutes = processed_user['duration_minutes']
-            delay = processed_user['delay'] 
+            delay = processed_user['delay']
             transition_time = processed_user['transition_time']
             run_once = processed_user['run_once']
-            user_args = {}
-            for arg in user.getchildren():
-                if arg.tag == 'arg':
-                    user_args.update(LoadProcessor.process(arg)) 
-            agent = LoadAgent(User(duration_minutes, load_level, session, transition_time, user_args, run_once), delay)
+            # XXX TODO Make it so we can load per user session_vars
+            agent = LoadAgent(User(duration_minutes, load_level, session,
+                                   transition_time, session_vars.get(session),
+                                   session_baseload.get(session),
+                                   run_once), delay)
             self.agents.append(agent)
 
     def start(self):
         """Run all LoadAgents
-           
+
         Each LoadAgent runs as a sepereate Process and will generate 
         requests (load) upon the server,
         It will have it's own individual timing that duration that 
@@ -196,14 +194,14 @@ class LoadAgent(Process):
 
         Keeps track of duration and timing interval to ensure that
         requests are generated according to expectexd request hit rate and
-        duration. 
+        duration.
         """
         # expiration time might be milliseconds behind expected due to start being
-        # a different value 
+        # a different value
         if self.user.interval is not None:
             get_interval_seconds = self.user.interval.total_seconds
             interval_seconds = get_interval_seconds()
-            transition_time = self.user.transition_time 
+            transition_time = self.user.transition_time
         else:
             interval_seconds = None
             transition_time = False
@@ -282,6 +280,7 @@ def run_main(**kw):
     logging.basicConfig(level=lvl)
     manager = LoadManager(profile, load_server=load_server, 
         ssl=ssl)
+    startup.do_startup()
     manager.start()
  
 if __name__ == '__main__':

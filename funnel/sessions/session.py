@@ -6,9 +6,11 @@ class Session(object):
     _previous_user = None
     request_share = Manager().dict()
         
-    def __init__(self, share, session_args, *args, **kw):
+    def __init__(self, name, share, s_args, baseload, *args, **kw):
+        self.name = name
         self._previous_user = share
-        self.session_args = session_args
+        self.s_args = s_args
+        self.baseload = baseload
             
     @property
     def previous_interval(self):
