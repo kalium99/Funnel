@@ -1,0 +1,10 @@
+<root>
+  <config>
+   <xmlproxy value="/RPC2" />
+   <baseload session='xmlrpc' requests='1' unit='minute'/>
+  </config>
+
+  <load> 
+      <user duration='1' unit='minute' session='xmlrpc' load-level='1'/>
+  </load>
+</root>

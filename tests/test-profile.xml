@@ -1,0 +1,21 @@
+<root>
+  <config>
+   <xmlproxy value="/RPC2" />
+   <baseload session='profile1' requests='1' unit='minute'/>
+   <baseload session='profile2' requests='2' unit='second'/>
+   <baseload session='profile3' requests='3' unit='hour'/>
+   <baseload session='profile4' requests='5' unit='hour'/>
+  </config>
+
+  <load>
+      <user duration='1' unit='hour' session='profile1' load-level='0.5'/>
+      <user duration='20' unit='minute' session='profile2' load-level='1'/>
+      <user duration='300' unit='second' session='profile3' load-level='1.5'/>
+      <user duration='1000' unit='minute' session='profile4' load-level='10.5'/>
+
+      <user delay='0.5' duration='1' unit='hour' session='profile1' load-level='0.5'/>
+      <user delay ='1' duration='20' unit='minute' session='profile2' load-level='1'/>
+      <user delay='10' duration='300' unit='second' session='profile3' load-level='1.5'/>
+      <user delay='100.00' duration='1000' unit='minute' session='profile4' load-level='10.5'/>
+  </load>
+</root>
